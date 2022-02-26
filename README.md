@@ -17,7 +17,7 @@ This study was a collaboration between the University of British Columbia and Pa
 
 ## Data source
 
-Census tract-level life expectancy and cause-specific mortality estimates were collected from UBC, which was derived using mortality data from <a href='https://www.popdata.bc.ca/data/listings'>BC Ministry of Health via PopDataBC</a>. Sociodemographic information, such as population and age, was collected from <a href='https://www12.statcan.gc.ca/census-recensement/index-eng.cfm'>Statistics Canada</a>. The Material and Social Deprivation Index (MSDI) scores were collected from the <a href='https://www.canue.ca/'>Canadian Urban Environmental Health Research Consortium</a>.
+Census tract-level life expectancy and cause-specific mortality estimates were collected from <a href='https://doi.org/10.1016/j.healthplace.2021.102692'>UBC</a>, which was derived using mortality data from <a href='https://www.popdata.bc.ca/data/listings'>BC Ministry of Health via PopDataBC</a>. Sociodemographic information, such as population and age, was collected from <a href='https://www12.statcan.gc.ca/census-recensement/index-eng.cfm'>Statistics Canada</a>. The Material and Social Deprivation Index (MSDI) scores were collected from the <a href='https://www.canue.ca/'>Canadian Urban Environmental Health Research Consortium</a>.
 
 ## Main Findings
 
@@ -31,7 +31,7 @@ Greater inequality with increasing density was observed for causes such as HIV/A
 
 The findings of this study was published in the journal, <a href='https://doi.org/10.1016/j.healthplace.2021.102692'>International Journal of Environmental Research and Public Health</a>. The following citation can be used:
 
-Yu J, Gustafson P, Tran M, Brauer M. Assessing trade-offs and optimal ranges of density for life expectancy and 12 causes of mortality in Metro Vancouver, Canada, 1990-2016. Health & place. 2022 Mar 9;72:102692.
+Yu J, Gustafson P, Tran M, Brauer M. Assessing trade-offs and optimal ranges of density for life expectancy and 12 causes of mortality in Metro Vancouver, Canada, 1990-2016. International Journal of Environmental Research and Public Health. 2022 Mar.
 
 ### Directory structure
 
