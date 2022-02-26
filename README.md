@@ -43,4 +43,4 @@ The following folders include scripts that were used to process the data:
 
 * `3-difference-in-differences-models:` quasi-experimental design of density on multiple health outcomes by SES
 
-<center><em>For more information, contact mE at j.yu@ubc.ca.</em></center>
+<center><em>For more information, contact me at j.yu@ubc.ca.</em></center>
