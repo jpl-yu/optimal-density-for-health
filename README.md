@@ -1,6 +1,6 @@
 __
 
-<img src='optimal_density_header.png' /></a>
+<img src='img/optimal_density_header.png' /></a>
 ___
 
 # Assessing trade-offs and optimal ranges of density for life expectancy and 12 causes of mortality in Metro Vancouver, Canada, 1990-2016
