@@ -1,0 +1,265 @@
+---
+title: "prepareDensityandCause"
+output: html_document
+---
+   Written by: Jessica Yu, 2022.                                                                         
+               jessica_yu@alumni.ubc.ca                                                                               
+                                                                                             
+   Data from: Statistics Canada, Population Data BC, BC Ministry of Health, and The Canadian Urban Environmental Health Research Consortium    
+   Paper under review from this work: 
+   Yu J, Gustafson P, Tran M, Brauer M. Assessing trade-offs and optimal ranges of densities for life expectancy and 12 causes of mortality in Metro Vancouver, British Columbia, Canada, 1990-2016. International Journal of Environmental Research and Public Health. 2022.                                          
+                                                                                                         
+   **Outline**                                                                                               
+             (A) Load libraries, import data, and define attributes                  
+             (B) Load all density files and merge with cause files
+             (C) OPTION 1: Density by log scale
+             (D) OPTION 2: Density by absolute scale
+             (E) OPTION 3: Density by absolute scale for all years
+             (F) OPTION 4: Density by SES group
+             (G) OPTION 5: Cubic spline stratification by SES
+
+#Load libraries, import data, and define attributes    
+            
+```{r}
+rm(list=ls())
+library(dplyr)
+library(ggplot2)
+library(car)
+dir<-"R:/working/modeling/temp_dir/causes/"
+dir2<-"R:/working/preparing data/"
+dir3<-"R:/working/modeling/cov_files/"
+dir4<-"R:/working/results/density/causes/"
+dir5<-"R:/working/results/ses/"
+this_cause<-"diab_ckd"
+file<-".Rdata"
+file2<-".pdf"
+CTs<-368
+load(paste0(dir3, "covar_", CTs,"CTs", file))
+load("R:/working/modeling/cov_files/education_368CTs.RData")
+education<-education %>% rename(area=CT)
+
+```
+
+## Load all density files and merge with cause files - change to cause of choice
+
+```{r}
+
+year<-c(1990:2016)
+
+
+for (i in year) {
+  load(paste0(dir,"sims/",this_cause, "/mx_est_", i,file)) ##CHANGE TO CAUSE OF INTEREST
+  est <- est %>% filter(age==99) %>% select(year,area, mx_mean) 
+  assign(paste0("birth",i), est)
+  rm(est)
+}
+
+birthAll<-lapply(ls(pattern="birth"), get)
+library(plyr)
+birthAll<-ldply(birthAll, data.frame)
+detach("package:plyr", unload=TRUE)
+
+
+load("R:/working/preparing data/Density/popdensity_final_368.RDATA")
+load(paste0(dir2, "CT", CTs, file))
+
+densityAll<-merge(density,CT, by="area")
+
+birthAll<-left_join(birthAll, densityAll, by=c("area","year"))
+
+```
+
+## OPTION 1: Density by log scale
+
+```{r}
+##ALL DATA
+dir2<-"R:/working/preparing data/"
+file<-".Rdata"
+this_cause<-"intent"
+
+load(paste0(dir2, "density/birthAll_",this_cause, file))
+
+pdf(paste0(dir4,this_cause,"/Density_",this_cause,"_all",file2), width=12, height=12)
+
+densityPlot<- 
+  ggplot(birthAll3, aes(x=log10(population_density), y=mx_mean, label=msdgroup, color=msdgroup)) +
+  geom_smooth(method=lm, formula=y ~ splines::bs(x,3),  color="red", fill="#69b3a2", se=TRUE) 
+densityPlot + labs(x="Population Density (Log Transformed)", y=paste0(this_cause, " Mortality (per 100,000)"), colour="SES", title=paste0("Population Density and ",this_cause," Mortality"),  cex.main=2, cex.sub=1.5, cex.sub=1.25)
+
+dev.off()
+
+##HIGH SES DATA
+
+birthAll4<-birthAll3 %>% filter(msdgroup==5)
+
+pdf(paste0(dir4,this_cause,"/Density_",this_cause,"_highSES",file2), width=12, height=12)
+
+densityPlot<- 
+  ggplot(birthAll4, aes(x=log10(population_density), y=mx_mean, label=msdgroup, color=msdgroup)) +
+  geom_point() +
+  geom_smooth(method=lm, formula=y ~ splines::bs(x,3),  color="red", fill="#69b3a2", se=TRUE) 
+densityPlot + labs(x="Population Density (Log Transformed)", y=paste0(this_cause, " Mortality (per 100,000)"), colour="SES", title=paste0("Population Density and ",this_cause," Mortality"), cex.main=2, cex.sub=1.5, cex.sub=1.25)
+
+dev.off()
+
+birthAll4<-birthAll3 %>% filter(msdgroup==1)
+
+pdf(paste0(dir4,this_cause,"/Density_",this_cause,"_lowSES",file2), width=12, height=12)
+
+densityPlot<- 
+  ggplot(birthAll4, aes(x=log10(population_density), y=mx_mean, label=msdgroup, color=msdgroup)) +
+  geom_point() +
+  geom_smooth(method=lm, formula=y ~ splines::bs(x,3),  color="red", fill="#69b3a2", se=TRUE) 
+densityPlot + labs(x="Population Density (Log Transformed)", y=paste0(this_cause, " Mortality (per 100,000)"), colour="SES", title=paste0("Population Density and ",this_cause," Mortality"), cex.main=2, cex.sub=1.5, cex.sub=1.25)
+
+dev.off()
+
+```
+
+
+## OPTION 2: Density by absolute scale
+
+
+```{r}
+dir4<-"R:/working/results/density/causes/"
+dir2<-"R:/working/preparing data/"
+file<-".Rdata"
+this_cause<-"intent"
+
+load(paste0(dir2, "density/birthAll_",this_cause, file))
+
+
+pdf(paste0(dir4,this_cause,"/Density_",this_cause,"_all_absolute",file2), width=12, height=12)
+
+densityPlot<- 
+  ggplot(birthAll3, aes(x=population_density, y=mx_mean, label=msdgroup, color=msdgroup)) +
+  geom_point() +
+  geom_smooth(method=lm, formula=y ~ splines::bs(x,3),  color="red", fill="#69b3a2", se=TRUE) 
+densityPlot + labs(x="Population Density", y=paste0(this_cause, " Mortality (per 100,000)"), colour="SES", title=paste0("Population Density and ",this_cause," Mortality"),  cex.main=2, cex.sub=1.5, cex.sub=1.25) 
+
+dev.off()
+
+##HIGH SES DATA
+
+birthAll4<-birthAll3 %>% filter(msdgroup==5)
+
+pdf(paste0(dir4,this_cause,"/Density_",this_cause,"_highSES_absolute",file2), width=12, height=12)
+
+densityPlot<- 
+  ggplot(birthAll4, aes(x=population_density, y=mx_mean, label=msdgroup, color=msdgroup)) +
+  geom_point() +
+  geom_smooth(method=lm, formula=y ~ splines::bs(x,3),  color="red", fill="#69b3a2", se=TRUE) 
+densityPlot + labs(x="Population Density", y=paste0(this_cause, " Mortality (per 100,000)"), colour="SES", title=paste0("Population Density and ",this_cause," Mortality"), cex.main=2, cex.sub=1.5, cex.sub=1.25)
+
+dev.off()
+
+birthAll4<-birthAll3 %>% filter(msdgroup==1)
+
+pdf(paste0(dir4,this_cause,"/Density_",this_cause,"_lowSES_absolute",file2), width=12, height=12)
+
+densityPlot<- 
+  ggplot(birthAll4, aes(x=population_density, y=mx_mean, label=msdgroup, color=msdgroup)) +
+  geom_point() +
+  geom_smooth(method=lm, formula=y ~ splines::bs(x,3),  color="red", fill="#69b3a2", se=TRUE) 
+densityPlot + labs(x="Population Density", y=paste0(this_cause, " Mortality (per 100,000)"), colour="SES", title=paste0("Population Density and ",this_cause," Mortality"), cex.main=2, cex.sub=1.5, cex.sub=1.25)
+
+dev.off()
+
+```
+
+
+## OPTION 3: Density by absolute scale for all years
+
+
+```{r}
+##ALL DATA
+this_cause<-"hiv_std"
+
+load(paste0(dir2, "density/birthAll_",this_cause, file))
+
+pdf(paste0(dir4,this_cause,"/Density_",this_cause,"_all_absolute",file2), width=12, height=12)
+
+densityPlot<- 
+  ggplot(birthAll3, aes(x=population_density, y=mx_mean, label=msdgroup, color=msdgroup)) +
+  geom_smooth(method=lm, formula=y ~ splines::bs(x,3),  color="red", fill="#69b3a2", se=TRUE) 
+densityPlot + labs(x="Population Density", y=paste0(this_cause, " Mortality (per 100,000)"), colour="SES", title=paste0("Population Density and ",this_cause," Mortality"), cex.main=2, cex.sub=1.5, cex.sub=1.25)
+
+dev.off()
+
+```
+
+
+## OPTION 4: Density by SES group
+
+```{r}
+load(paste0(dir2, "density/birthAll_",this_cause, file))
+cause<-"Maternal and neonatal diseases"
+year<-2016
+
+birthAll3<-birthAll3 %>% filter(year==year)
+
+#SES only
+png(paste0(dir5,this_cause,"_ses_",year,".png"))
+
+ggplot(birthAll3, aes(factor(msdgroup), mx_mean)) + 
+  xlab("SES")+
+  ylab("Mortality Rate per 100,000") +
+  ggtitle(paste0(cause))+
+  geom_bar(stat="identity", position = "dodge", fill="#f68060") + 
+  scale_fill_brewer(palette = "Oranges") 
+dev.off()
+
+png(paste0(dir5,this_cause,"_ses_density_",year,".png"))
+#SES and density
+ggplot(birthAll3, aes(factor(msdgroup), mx_mean, fill = densitygroup)) + 
+  xlab("SES")+
+  ylab("Mortality Rate per 100,000") +
+  labs(fill="Density") +
+  ggtitle(paste0(cause))+
+  geom_bar(stat="identity", position = "dodge") + 
+  scale_fill_brewer(palette = "Oranges") 
+dev.off()
+
+```
+
+## OPTION 5: Cubic spline stratification by SES
+
+```{r}
+
+load("R:/working/preparing data/density/birthAll_final_368.RDATA")
+birthAll2<-birthAll %>% merge(CTCSD, by="area") %>% select(area,year,mx_mean,ex_mean,population_density,CSDNAME)
+names(covar)[2]<-"area"
+
+
+
+birthAll2<-birthAll2 %>% left_join(covar, by=c("year","area")) 
+
+outliers<-Boxplot(ex_mean ~ cut(population_density, 10), data=birthAll2, main="Outliers of Population Density and LE for All Years", cex.axis=0.5, id.method="expdiff_percentage")
+
+birthAll3<-birthAll2 %>%
+  filter(!row_number() %in% outliers)
+
+
+
+birthAll2<-birthAll2 %>% group_by(year) %>% mutate(msdgroup=ntile(msd, 5), matgroup=ntile(MatScore, 5), socgroup=ntile(SocScore, 5), edugroup=ntile(education, 5))
+
+matscore<-ggplot(birthAll3, aes(x=population_density, y=ex_mean, color=as.factor(matgroup))) +
+  geom_smooth(data=birthAll3, aes(x=population_density, y=ex_mean, color=as.factor(matgroup))) +
+  labs(x="Population Density", y="Life Expectancy", color="Material Deprivation Score", title="Population Density and Life Expectancy", cex.main=2, cex.sub=1.5, cex.sub=1.25) +
+  theme_bw()
+
+  
+socscore<-ggplot(birthAll3, aes(x=population_density, y=ex_mean, color=as.factor(socgroup))) +
+  geom_smooth(data=birthAll3, aes(x=population_density, y=ex_mean, color=as.factor(socgroup)))  +
+  labs(x="Population Density", y="Life Expectancy", color="Social Deprivation Score", title="Population Density and Life Expectancy", cex.main=2, cex.sub=1.5, cex.sub=1.25) +
+  theme_bw()  
+  
+msdscore<-ggplot(birthAll3, aes(x=population_density, y=ex_mean, color=as.factor(msdgroup))) +
+  geom_smooth(data=birthAll3, aes(x=population_density, y=ex_mean, color=as.factor(msdgroup)))  +
+  labs(x="Population Density", y="Life Expectancy", color="Material and Social Deprivation Score", title="Population Density and Life Expectancy", cex.main=2, cex.sub=1.5, cex.sub=1.25) +
+  theme_bw()
+
+
+
+```
+

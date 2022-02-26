@@ -1,0 +1,166 @@
+---
+title: "prepareDerivative"
+output: html_document
+---
+
+   Written by: Jessica Yu, 2022.                                                                         
+               jessica_yu@alumni.ubc.ca                                                                               
+                                                                                             
+   Data from: Statistics Canada, Population Data BC, BC Ministry of Health, and The Canadian Urban Environmental Health Research Consortium    
+   Paper under review from this work: 
+   Yu J, Gustafson P, Tran M, Brauer M. Assessing trade-offs and optimal ranges of densities for life expectancy and 12 causes of mortality in Metro Vancouver, British Columbia, Canada, 1990-2016. International Journal of Environmental Research and Public Health. 2022.                                          
+                                                                                                         
+   **Outline**                                                                                               
+             (A) Load libraries, import data, and define attributes                                                  
+             (B) Apply cubic splines for density and cause-specific mortality rates and find derivative
+             (C) Find inflection and plot derivative function
+             (D) Plot new cause-specific mortality rate figures with shaded area for optimal range
+             (E) Apply cubic splines for density and life expectancy and find derivative
+             (F) Plot new life expectancy figures with shaded area for optimal range
+             
+
+#Load libraries, import data, and define attributes 
+
+```{r}
+library(ggplot2)
+library(car)
+library(dplyr)
+this_cause<-"neo"
+dir2<-"R:/working/preparing data/"
+dir4<-"R:/working/results/density/causes/"
+file<-".Rdata"
+load(paste0(dir2, "density/birthAll_",this_cause, file))
+```
+
+
+## Apply cubic splines for density and cause-specific mortality rates and find derivative
+
+```{r}
+
+birthAll3 <-birthAll3 %>% filter(year==2016)
+
+model= lm(birthAll3$mx_mean ~ splines::bs(birthAll3$population_density,3))
+X<-data.frame(birthAll3$population_density)
+Y<-predict(model, newdata=X)
+X<-X[,1]
+plot(X, Y, type="p", main="Original fit")
+
+dY<-diff(Y)/diff(X)
+dX<-rowMeans(embed(X, 2))
+plot(dX, dY, type="p", main="Derivative")
+
+original<-data.frame(X,Y)
+fitted<-data.frame(dX,as.data.frame(dY))
+
+
+```
+
+## Find inflection and plot derivative function
+
+```{r}
+#Inflection min if U-shaped derivative function or max if inverted U shape
+inflection<-fitted[which.max(fitted$dY),] #min if u-shaped
+lowest<-original$X[which.min(original$Y)]
+
+pdf(paste0("R:/working/results/density/causes/", this_cause, "/", this_cause, "_derivative.pdf"), width=12, height=12)
+
+ggplot(fitted, aes(x=dX, y=dY)) +
+  ggtitle(paste("Derivative of", this_cause, "function")) +
+  geom_point(y=dY, colour="red") + 
+  theme(text=element_text(size=30), legend.title=element_text(size=40)) +
+  stat_smooth() +
+  geom_vline(xintercept=inflection[1,1], colour="grey", linetype="dotdash", size=1.5)  
+
+dev.off()
+
+inflection<-inflection[1,1]
+
+shade<-data.frame(xmin=lowest, xmax=inflection, ymin=-Inf, ymax=Inf)
+```
+
+
+## Plot new cause-specific mortality rate figures with shaded area for optimal range
+
+```{r}
+pdf(paste0(dir4,this_cause,"/Density_",this_cause,"_all_absolute_range_2016.pdf"), width=12, height=12)
+
+densityPlot<- 
+  ggplot(birthAll3, aes(x=population_density, y=mx_mean, label=msdgroup, color=msdgroup)) +
+  #ylim(0.000255,0.00028) +
+  geom_point() +
+  theme(text=element_text(size=30), legend.title=element_text(size=30), legend.text = element_text(size=30)) +
+  #facet_grid(CSDNAME ~ year) +
+  geom_smooth(method=lm, formula=y ~ splines::bs(x,3),  color="red", fill="#69b3a2", se=TRUE) 
+densityPlot + labs(x="Population Density", y=paste0("Mortality Rate (per 100,000)"), colour="SES", title=paste0(this_cause),  cex.main=2, cex.sub=1.5, cex.sub=1.25) +
+  geom_vline(xintercept=inflection, colour="grey", linetype="dotdash", size=1.5) +
+  geom_vline(xintercept=lowest, colour="grey", linetype="dotdash", size=1.5) +
+  geom_rect(data=shade, aes(xmin=xmin, xmax=xmax, ymin=ymin, ymax=ymax), fill="yellow", alpha=0.1, inherit.aes=FALSE)
+
+dev.off()
+```
+
+
+## Apply cubic splines for density and life expectancy and find derivative
+
+```{r}
+
+load("R:/working/preparing data/density/birthAll_final_368_withcovar.RDATA")
+
+outliers<-Boxplot(ex_mean ~ cut(population_density, 10), data=birthAll2, main="Outliers of Population Density and LE for All Years", cex.axis=0.5, id.method="expdiff_percentage")
+
+birthAll2<-birthAll2 %>%
+  filter(!row_number() %in% outliers) %>%
+  filter(year==2016)
+
+model= lm(birthAll2$ex_mean ~ splines::bs(birthAll2$population_density,3))
+
+X<-data.frame(birthAll2$population_density)
+Y<-predict(model, newdata=X)
+X<-X[,1]
+plot(X, Y, type="p", main="Original fit")
+
+dY<-diff(Y)/diff(X)
+dX<-rowMeans(embed(X, 2))
+plot(dX, dY, type="p", main="Derivative")
+
+original<-data.frame(X,Y)
+fitted<-data.frame(dX,as.data.frame(dY))
+
+inflection<-fitted[which.max(fitted$dY),]
+lowest<-original$X[which.max(original$Y)]
+
+pdf(paste0("R:/working/results/density/LE/LE_derivative_alllSES_2016.pdf"), width=12, height=12)
+
+ggplot(fitted, aes(x=dX, y=dY)) +
+  ggtitle(paste("Derivative of LE function")) +
+  geom_point(y=dY, colour="red") +
+  theme(text=element_text(size=30), legend.title=element_text(size=40)) + 
+  stat_smooth() +
+  geom_vline(xintercept=inflection[1,1], colour="grey")  
+
+dev.off()
+
+inflection<-inflection[1,1]
+shade<-data.frame(xmin=lowest, xmax=inflection, ymin=-Inf, ymax=Inf)
+
+```
+
+##  Plot new life expectancy figures with shaded area for optimal range
+
+```{r}
+pdf(paste0("R:/working/results/density/LE/DensityandLe_allSES_range_2016.pdf"), width=12, height=12)
+
+densityPlot<- 
+  ggplot(birthAll2, aes(x=population_density, y=ex_mean, label=msdgroup, color=msdgroup)) +
+  geom_point() +
+  theme(text=element_text(size=40)) +
+  geom_smooth(method=lm, formula=y ~ splines::bs(x,3),  color="red", fill="#69b3a2", se=TRUE) 
+densityPlot + labs(x="Population Density", y="Life Expectancy", colour="SES", title="Population Density and Life Expectancy", cex.main=2, cex.sub=1.5, cex.sub=1.25)+
+  geom_vline(xintercept=inflection, colour="grey", linetype="dotdash", size=1.5) +
+  geom_vline(xintercept=lowest, colour="grey", linetype="dotdash", size=1.5) +
+  geom_rect(data=shade, aes(xmin=xmin, xmax=xmax, ymin=ymin, ymax=ymax), fill="yellow", alpha=0.1, inherit.aes=FALSE)
+
+dev.off()
+```
+
+

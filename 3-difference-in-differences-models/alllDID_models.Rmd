@@ -1,0 +1,917 @@
+---
+title: "prepareDID"
+output: html_document
+---
+
+   Written by: Jessica Yu, 2022.                                                                         
+               jessica_yu@alumni.ubc.ca                                                                               
+                                                                                             
+   Data from: Statistics Canada, Population Data BC, BC Ministry of Health, and The Canadian Urban Environmental Health Research Consortium    
+   Paper under review from this work: 
+   Yu J, Gustafson P, Tran M, Brauer M. Assessing trade-offs and optimal ranges of densities for life expectancy and 12 causes of mortality in Metro Vancouver, British Columbia, Canada, 1990-2016. International Journal of Environmental Research and Public Health. 2022.                                          
+                                                                                                         
+   **Outline**                                                                                               
+             (A) Load libraries, import data, and define attributes                                                  
+             (B) Merge data and assess the change in density from 1990 to 2016
+             (C) Visualise the density change  
+             (D) Plot density plot of density change to use as threshold decision
+             (E) Plot parallel line assumption - absolute thresholds
+             (F) Merge density change and prepare DID dataset
+             (G) Apply DID model by percent change
+             (H) Create shapefile for treated and control identification
+             (I) Apply DID model on LE for High SES group
+             (J) Apply DID model on LE for Low SES Group
+             (K) Apply DID model on cause-specific mortalities - percent change
+             (L) Apply DID model on cause-specific mortalities - low SES group
+             (M) Apply DID model on cause-specific mortalities - high SES group
+             (N) Descriptive data for paper
+             (O) Derive land area
+
+## Load libraries, import data, and define attributes  
+
+```{r}
+rm(list=ls())
+library(dplyr)
+library(ggplot2)
+library(rgdal)
+load("R:/working/preparing data/density/birthAll_final_368.RDATA") ##LIFE EXPECTANCY WITH DENSITY FOR ALL CENSUS YEARS
+load("R:/working/preparing data/CT368.rdata")
+CTs<-1:368
+```
+
+## Merge data and assess the change in density from 1990 to 2016
+
+```{r}
+#initialise a dataframe
+densityChange<-data.frame("area" = 1:368, "change" = 0)
+birthAll$area<-birthAll$area+1
+
+#loop to look at differences in density from 1991 to 2016
+
+for (i in CTs) {
+  densityChange[i,2]<-birthAll$population_density[which((birthAll$year==2016) & (birthAll$area==i))]-birthAll$population_density[which((birthAll$year==1990) & (birthAll$area==i))]
+}
+
+
+#check the densities in 1991 and 2016 for manual inspection
+
+densityChangeCheck<-data.frame("area" = 1:368,"density1991"=0,"density2016"=0, "change" = 0)
+
+for (i in CTs) {
+  densityChangeCheck[i,2]<-birthAll$population_density[which((birthAll$year==1990) & (birthAll$area==i))]
+  densityChangeCheck[i,3]<-birthAll$population_density[which((birthAll$year==2016) & (birthAll$area==i))]
+  densityChangeCheck[i,4]<-birthAll$population_density[which((birthAll$year==2016) & (birthAll$area==i))]-birthAll$population_density[which((birthAll$year==1990) & (birthAll$area==i))]
+}
+
+birthAll$area<-birthAll$area-1
+densityChangeCheck$area<-densityChangeCheck$area-1
+
+densityChangeCheck<-merge(densityChangeCheck,CT, by="area")
+densityChangeCheck<-densityChangeCheck %>%
+  mutate(percent_change=change/density1991)
+
+save(densityChangeCheck, file="R:/working/preparing data/density/densityChangeCheck.RDATA")
+write.csv(densityChangeCheck, file="R:/working/preparing data/density/densityChangeCheck.csv", row.names = F)
+
+```
+
+## Visualise the density change  
+
+```{r}
+load(file="R:/working/modeling/shape_files/shape-mapping368CTs.RData")
+shape$CTNAME<-as.numeric(as.character(shape$CTNAME))
+
+
+range<-round(quantile(densityChange$change, c(.05,.1,.25,.5,.75,.9,.95), na.rm=TRUE))
+at=c(range)
+
+labels=c(paste0(""),range)
+
+
+#Prep LE
+densityChanges<-densityChange
+names(densityChanges)[1]<-"CTNAME"
+
+densityChangeCheck <- densityChangeCheck %>% rename(CTNAME=area)
+
+#merge shapefiles with current Exp and Mortality
+shapeChange<-merge(x=shape, y=densityChangeCheck, by="CTNAME")
+
+writeOGR(shapeChange, dsn = "DensityChange", layer="densityChange", driver="ESRI Shapefile")
+
+pdf("R:/working/preparing data/Density/Figures/densityChangesMap.pdf")
+
+names(shapeChange@data)[2]<-"change"
+shapeChange$change<-as.numeric(shapeChange$change)
+shapeChange@data$change<-cut(shapeChange@data$change, breaks=c(min(densityChange$change),at, max(densityChange$change)))
+spplot(shapeChange, "change",  sp.layout=list("sp.polygons",shapeChange),par.settings = list(axis.line=list(col="transparent")), main="Density Changes from 1991 to 2016",colorkey=list(labels=list(at=seq(0.5,length(at)+1), labels=labels)))
+
+dev.off()
+
+```
+
+
+## Plot density plot of density change to use as threshold decision
+
+```{r}
+library(tidyverse)
+
+quantile(densityChangeCheck$change, .25) #71.3
+
+`pdf("R:/working/preparing data/Density/Figures/histogramDensity.pdf") 
+
+p1<- densityChange %>%
+  ggplot(aes(x=change)) +
+  geom_histogram(binwidth=368, fill="#69b3a2", color="#e9ecef", alpha=0.9) +
+  ggtitle("Histogram of Changes in Population Density (1991-2016)") 
+  theme(
+    plot.title = element_text(size=15))
+  
+p1
+  
+p2<- densityChange %>%
+  filter ( change<6000) %>%
+  ggplot(aes(x=change)) +
+  geom_histogram(binwidth=368, fill="#69b3a2", color="#e9ecef", alpha=0.9) +
+  ggtitle("Histogram of Changes in Population Density (1991-2016)") 
+  theme(
+    plot.title = element_text(size=15))
+  
+p2
+
+dev.off()  
+`
+```
+
+
+## Plot parallel line assumption - absolute thresholds
+
+
+```{r}
+
+load("R:/working/preparing data/density/birthAll_final_368_withcovar.RDATA")
+load("R:/working/preparing data/density/densityChangeCheck.RDATA")
+
+birthAll3<-merge(birthAll2,densityChangeCheck,by="area")
+
+
+birthall<-birthAll3
+#birthall<-subset(birthall, birthall$change>0)
+
+x.95th<-quantile(birthall$change, c(.95))
+x.90th<-quantile(birthall$change, c(.90))
+x.75th<-quantile(birthall$change, c(.75))
+x.50th<-quantile(birthall$change, c(.5))
+
+
+#birthall<-subset(birthall, change<0)#80th percentile and those less than 0
+birthall<-subset(birthall, change>=quantile(birthall$change, c(.90)) | change<=quantile(birthall$change, c(.10)))#90th and 10th percentile
+
+
+#Find density change data 
+birthall = birthall %>%
+  mutate(treated = change>=x.90th)
+
+
+#Plot year and life expectancy of two density change categories to ensure parallel assumption is met
+pdf("R:/working/preparing data/Density/Figures/parallel_line_assumption_90v10alldata.pdf") 
+
+ggplot(birthall, aes(year, ex_mean, color = treated)) +
+  stat_summary(geom = 'line') +
+  geom_vline(xintercept = 1996) +
+  ggtitle("Parallel Line Assumption for Densification of P90 vs P10 - All CTs")+
+  xlab("Year") +
+  ylab("Life Expectancy") +
+  labs(color="Densification") +
+  scale_color_manual(labels= c("P10", "P90"), values=c("blue","red"))+
+  theme_minimal()
+
+dev.off()
+
+```
+
+#Merge change and prepare DID dataset
+
+```{r}
+
+load("R:/working/preparing data/density/birthAll_final_368_withcovar.RDATA")
+load("R:/working/preparing data/density/densityChangeCheck.RDATA")
+
+birthall<-birthAll
+
+birthall<-merge(birthall,densityChange,by="area")
+birthall<-subset(birthall, birthall$change>0)
+
+birthall<-subset(birthall, change>=quantile(birthall$change, c(.90)) | change<=quantile(birthall$change, c(.10)))
+
+x.95th<-quantile(birthall$change, .95)
+x.90th<-quantile(birthall$change, .90)
+x.80th<-quantile(birthall$change, .80)
+x.75th<-quantile(birthall$change, .75)
+x.50th<-quantile(birthall$change, .50)
+
+
+
+
+birthall$time = ifelse(birthall$year>1996,1,0)
+birthall$treated = ifelse(birthall$change>=x.90th,1,0)
+birthall$did = birthall$time * birthall$treated
+
+didreg = lm(mx_mean ~ treated + time + did, dat = birthall)
+
+sink("R:/working/preparing data/Density/Figures/didsummary_90v10.txt") 
+
+print(summary(didreg)) 
+
+sink()
+
+```
+
+
+## Apply DID model by percent change
+
+```{r}
+load("R:/working/preparing data/density/birthAll_final_368_withcovar.RDATA")
+#Or for summary stats use this so we keep mat and soc deprivation scores in tact
+#load("R:/working/preparing data/density/birthAll_final_368_withcovarmsd.RDATA")
+
+load("R:/working/preparing data/density/densityChangeCheck.RDATA")
+
+#for LE
+birthAll3<-merge(birthAll2,densityChangeCheck,by="area")
+
+
+birthall<-birthAll3
+
+
+x.90th<-quantile(birthall$percent_change, c(.90))
+x.80th<-quantile(birthall$percent_change, c(.80))
+x.75th<-quantile(birthall$percent_change, c(.75))
+x.50th<-quantile(birthall$percent_change, c(.50))
+
+#birthall<-subset(birthall, change<0)#80th percentile and those less than 0
+birthall<-subset(birthall, percent_change>=quantile(birthall$percent_change, c(.90)) | percent_change<=quantile(birthall$percent_change, c(.10)))#95th and 5th percentile
+
+
+#Find density change data 
+birthall = birthall %>%
+  mutate(treated = percent_change>=x.90th)
+
+#Plot year and life expectancy of two density change categories to ensure parallel assumption is met
+pdf("R:/working/preparing data/Density/Figures/parallel_line_assumption_90v10alldata.pdf") 
+
+ggplot(birthall, aes(year, ex_mean, color = treated)) +
+  stat_summary(geom = 'line') +
+  geom_vline(xintercept = 1996) +
+  ggtitle("Parallel Line Assumption for Densification of P90 vs P10 - All CTs")+
+  xlab("Year") +
+  ylab("Life Expectancy") +
+  labs(color="Densification") +
+  scale_color_manual(labels= c("P10", "P90"), values=c("blue","red"))+
+  theme_minimal()
+
+dev.off()
+
+birthall$time = ifelse(birthall$year>1996,1,0)
+birthall$treated = ifelse(birthall$percent_change>=x.90th,1,0)
+birthall$did = birthall$time * birthall$treated
+
+didreg = lm(mx_mean ~ treated + time + did, dat = birthall)
+CIs<-confint(didreg, "did", level=0.95)
+CIs_LE<-confint(didreg, "did", level=0.95)
+
+
+sink("R:/working/preparing data/Density/Figures/didsummary_alldata_90v10.txt") 
+
+print(summary(didreg)) 
+print(CIs)
+
+sink()
+
+birthall<-birthAll3
+
+#birthall<-subset(birthall, change<0)#80th percentile and those less than 0
+birthall<-subset(birthall, change>=quantile(birthall$percent_change, c(.75)) | change<=quantile(birthall$percent_change, c(.25)))#95th and 5th percentile
+
+#Find density change data 
+birthall = birthall %>%
+  mutate(treated = percent_change>=x.75th)
+
+#Plot year and life expectancy of two density change categories to ensure parallel assumption is met
+pdf("R:/working/preparing data/Density/Figures/parallel_line_assumption_75v25alldata.pdf") 
+
+ggplot(birthall, aes(year, ex_mean, color = treated)) +
+  stat_summary(geom = 'line') +
+  geom_vline(xintercept = 1996) +
+  ggtitle("Parallel Line Assumption for Densification of P75 vs P25 - All CTs")+
+  xlab("Year") +
+  ylab("Life Expectancy") +
+  labs(color="Densification") +
+  scale_color_manual(labels= c("P10", "P90"), values=c("blue","red"))+
+  theme_minimal()
+
+dev.off()
+
+birthall$time = ifelse(birthall$year>1996,1,0)
+birthall$treated = ifelse(birthall$percent_change>=x.75th,1,0)
+birthall$did = birthall$time * birthall$treated
+
+didreg = lm(ex_mean ~ treated + time + did, dat = birthall)
+
+sink("R:/working/preparing data/Density/Figures/didsummary_alldata_75v25.txt") 
+
+print(summary(didreg)) 
+
+sink()
+
+
+birthall<-birthAll3
+
+#birthall<-subset(birthall, change<0)#80th percentile and those less than 0
+birthall<-subset(birthall, change>=quantile(birthall$percent_change, c(.50)) | change<quantile(birthall$percent_change, c(.50)))#95th and 5th percentile
+
+#Find density change data 
+birthall = birthall %>%
+  mutate(treated = percent_change>=x.50th)
+
+#Plot year and life expectancy of two density change categories to ensure parallel assumption is met
+pdf("R:/working/preparing data/Density/Figures/parallel_line_assumption_50v50alldata.pdf") 
+
+ggplot(birthall, aes(year, ex_mean, color = treated)) +
+  stat_summary(geom = 'line') +
+  geom_vline(xintercept = 1996) +
+  ggtitle("Parallel Line Assumption for Densification of P50 vs P50 - All CTs")+
+  xlab("Year") +
+  ylab("Life Expectancy") +
+  labs(color="Densification") +
+  scale_color_manual(labels= c("P10", "P90"), values=c("blue","red"))+
+  theme_minimal()
+
+dev.off()
+
+birthall$time = ifelse(birthall$year>1996,1,0)
+birthall$treated = ifelse(birthall$percent_change>=x.50th,1,0)
+birthall$did = birthall$time * birthall$treated
+
+didreg = lm(ex_mean ~ treated + time + did, dat = birthall)
+
+sink("R:/working/preparing data/Density/Figures/didsummary_alldata_50v50.txt") 
+
+print(summary(didreg)) 
+
+sink()
+
+```
+
+## Create shapefile for treated and control identification
+
+```{r}
+load(file="R:/working/modeling/shape_files/shape-mapping368CTs.RData")
+shape$CTNAME<-as.numeric(as.character(shape$CTNAME))
+
+treated <- birthall %>%
+  select(area, treated) %>%
+  group_by(area) %>%
+  summarise(treated=median(treated)) %>%
+  rename(CTNAME=area) %>%
+  mutate(treated=treated+1)
+
+shapeTreated<-merge(x=shape, y=treated, by="CTNAME")
+
+writeOGR(shapeTreated, dsn = "DensityChange_lowSES", layer="densityTreated_lowSES", driver="ESRI Shapefile", overwrite_layer = T)
+
+```
+
+
+## Apply DID model on LE for High SES group
+
+```{r}
+load("R:/working/preparing data/density/birthAll_final_368_withcovar.RDATA")
+#Or for summary stats use this so we keep mat and soc deprivation scores in tact
+#load("R:/working/preparing data/density/birthAll_final_368_withcovarmsd.RDATA")
+
+load("R:/working/preparing data/density/densityChangeCheck.RDATA")
+birthAll2<-merge(birthAll2,densityChangeCheck,by="area")
+
+birthall<-birthAll2 %>% filter(msdgroup==1)
+
+#Only use below when calculating descript because we need to subset year
+#birthall<-birthAll2 %>% filter(msdgroup==1 & year<1995)
+
+
+#birthall<-birthAll2 %>% filter(incomegroup==5)
+
+
+x.95th<-quantile(birthall$percent_change, c(.95))
+x.90th<-quantile(birthall$percent_change, c(.90))
+x.80th<-quantile(birthall$percent_change, c(.80))
+x.75th<-quantile(birthall$percent_change, c(.75))
+x.50th<-quantile(birthall$percent_change, c(.5))
+
+birthall<-subset(birthall, percent_change>=quantile(birthall$percent_change, c(.90)) | percent_change<=quantile(birthall$percent_change, c(.10)))
+
+birthall = birthall %>%
+  mutate(treated = percent_change>=x.90th)
+
+allCTsHigh<-data.frame(unique(birthall$area))
+
+
+pdf("R:/working/preparing data/Density/Figures/parallel_line_assumption_90v10_highSESdata.pdf") 
+
+ggplot(birthall, aes(year, ex_mean, color = treated)) +
+  stat_summary(geom = 'line') +
+  geom_vline(xintercept = 1996) +
+  ggtitle("Parallel Line Assumption Check for Upper 90th vs Bottom 10th percentile (1990-2016) - Low SES Data")+
+  theme_minimal()
+
+dev.off()
+
+#DID
+
+birthall$time = ifelse(birthall$year>1996,1,0)
+birthall$treated = ifelse(birthall$percent_change>=x.90th,1,0)
+birthall$did = birthall$time * birthall$treated
+
+didreg = lm(ex_mean ~ treated + time + did, dat = birthall)
+CIs_LE_high<-confint(didreg, "did", level=0.95)
+
+sink("R:/working/preparing data/Density/Figures/didsummary_highSES_90v10.txt") 
+
+print(summary(didreg)) 
+
+sink()
+
+
+birthall<-birthAll2 %>% filter(msdgroup==1)
+
+#birthall<-subset(birthall, change<0)#80th percentile and those less than 0
+birthall<-subset(birthall, change>=quantile(birthall$percent_change, c(.75)) | change<=quantile(birthall$percent_change, c(.25)))#95th and 5th percentile
+
+
+#Find density change data 
+birthall = birthall %>%
+  mutate(treated = percent_change>=x.75th)
+
+#Plot year and life expectancy of two density change categories to ensure parallel assumption is met
+pdf("R:/working/preparing data/Density/Figures/parallel_line_assumption_75v25_highSES.pdf") 
+
+ggplot(birthall, aes(year, ex_mean, color = treated)) +
+  stat_summary(geom = 'line') +
+  geom_vline(xintercept = 1996) +
+  ggtitle("Parallel Line Assumption for Densification of P75 vs P25 - High SES CTs")+
+  xlab("Year") +
+  ylab("Life Expectancy") +
+  labs(color="Densification") +
+  scale_color_manual(labels= c("P10", "P90"), values=c("blue","red"))+
+  theme_minimal()
+
+dev.off()
+
+birthall$time = ifelse(birthall$year>1996,1,0)
+birthall$treated = ifelse(birthall$percent_change>=x.75th,1,0)
+birthall$did = birthall$time * birthall$treated
+
+didreg = lm(ex_mean ~ treated + time + did, dat = birthall)
+
+sink("R:/working/preparing data/Density/Figures/didsummary_75v25_highSES.txt") 
+
+print(summary(didreg)) 
+
+sink()
+
+```
+
+## Apply DID model on LE for Low SES Group
+
+```{r}
+load("R:/working/preparing data/density/birthAll_final_368_withcovar.RDATA")
+#Or for summary stats use this so we keep mat and soc deprivation scores in tact
+#load("R:/working/preparing data/density/birthAll_final_368_withcovarmsd.RDATA")
+
+load("R:/working/preparing data/density/densityChangeCheck.RDATA")
+birthAll2<-merge(birthAll2,densityChangeCheck,by="area")
+
+#birthall<-birthAll2 %>% filter(msdgroup==5)
+
+birthall<-birthAll2 %>% filter(msdgroup==5)
+#birthall<-birthAll2 %>% filter(incomegroup==5)
+
+
+x.95th<-quantile(birthall$percent_change, c(.95))
+x.90th<-quantile(birthall$percent_change, c(.90))
+x.80th<-quantile(birthall$percent_change, c(.80))
+x.75th<-quantile(birthall$percent_change, c(.75))
+x.50th<-quantile(birthall$percent_change, c(.5))
+
+birthall<-subset(birthall, percent_change>=quantile(birthall$percent_change, c(.90)) | percent_change<=quantile(birthall$percent_change, c(.10)))#95th and 5th percentile
+
+birthall = birthall %>%
+  mutate(treated = percent_change>=x.90th)
+
+allCTsLow<-data.frame(unique(birthall$area))
+
+
+pdf("R:/working/preparing data/Density/Figures/parallel_line_assumption_90v10_lowSESdata.pdf") 
+
+ggplot(birthall, aes(year, ex_mean, color = treated)) +
+  stat_summary(geom = 'line') +
+  geom_vline(xintercept = 1996) +
+  ggtitle("Parallel Line Assumption Check for Upper 75th vs Bottom 25th percentile (1990-2016) - High SES Data")+
+  theme_minimal()
+
+dev.off()
+
+#DID
+
+birthall$time = ifelse(birthall$year>1996,1,0)
+birthall$treated = ifelse(birthall$percent_change>=x.90th,1,0)
+birthall$did = birthall$time * birthall$treated
+
+didreg = lm(ex_mean ~ treated + time + did, dat = birthall)
+CIs_LE_low<-confint(didreg, "did", level=0.95)
+
+sink("R:/working/preparing data/Density/Figures/didsummary_lowSES_90v10.txt") 
+
+print(summary(didreg)) 
+
+sink()
+
+birthall<-birthAll3
+
+#birthall<-subset(birthall, change<0)#80th percentile and those less than 0
+birthall<-subset(birthall, change>=quantile(birthall$percent_change, c(.75)) | change<=quantile(birthall$percent_change, c(.25)))#95th and 5th percentile
+
+
+#Find density change data 
+birthall = birthall %>%
+  mutate(treated = percent_change>=x.75th)
+
+#Plot year and life expectancy of two density change categories to ensure parallel assumption is met
+pdf("R:/working/preparing data/Density/Figures/parallel_line_assumption_75v25_lowSES.pdf") 
+
+ggplot(birthall, aes(year, ex_mean, color = treated)) +
+  stat_summary(geom = 'line') +
+  geom_vline(xintercept = 1996) +
+  ggtitle("Parallel Line Assumption for Densification of P75 vs P25 - Low SES CTs")+
+  xlab("Year") +
+  ylab("Life Expectancy") +
+  labs(color="Densification") +
+  scale_color_manual(labels= c("P10", "P90"), values=c("blue","red"))+
+  theme_minimal()
+
+dev.off()
+
+birthall$time = ifelse(birthall$year>1996,1,0)
+birthall$treated = ifelse(birthall$percent_change>=x.75th,1,0)
+birthall$did = birthall$time * birthall$treated
+
+didreg = lm(ex_mean ~ treated + time + did, dat = birthall)
+
+sink("R:/working/preparing data/Density/Figures/didsummary_75v25_lowSES.txt") 
+
+print(summary(didreg)) 
+
+sink()
+
+```
+
+
+## Apply DID model on cause-specific mortalities - percent change
+
+
+```{r}
+this_cause<-"cvd"
+dir2<-"R:/working/preparing data/"
+file<-".Rdata"
+load(paste0(dir2, "density/birthAll_",this_cause, file))
+
+load("R:/working/preparing data/density/densityChangeCheck.RDATA")
+
+
+birthAll3<-merge(birthAll3,densityChangeCheck,by="area")
+
+birthall<-birthAll3
+
+x.90th<-quantile(birthall$percent_change, c(.90))
+x.75th<-quantile(birthall$percent_change, c(.75))
+
+
+birthall<-subset(birthall, percent_change>=quantile(birthall$percent_change, c(.90)) | percent_change<=quantile(birthall$percent_change, c(.1)))
+
+#Find density change data 
+birthall = birthall %>%
+  mutate(treated = percent_change>=x.90th)
+
+#Plot year and life expectancy of two density change categories to ensure parallel assumption is met
+pdf(paste0("R:/working/preparing data/Density/Figures/parallel_line_assumption_90v10_", this_cause, ".pdf")) 
+
+ggplot(birthall, aes(year, mx_mean, color = treated)) +
+  stat_summary(geom = 'line') +
+  geom_vline(xintercept = 1996) +
+  ggtitle("Parallel Line Assumption for Densification of P90 vs P10 - All CTs")+
+  xlab("Year") +
+  ylab("Life Expectancy") +
+  labs(color="Densification") +
+  scale_color_manual(labels= c("P10", "P90"), values=c("blue","red"))+
+  theme_minimal()
+
+dev.off()
+
+
+#DID
+
+birthall$time = ifelse(birthall$year>1996,1,0)
+birthall$treated = ifelse(birthall$percent_change>=x.90th,1,0)
+birthall$did = birthall$time * birthall$treated
+
+didreg = lm(mx_mean ~ treated + time + did, dat = birthall)
+CIs<-confint(didreg, "did", level=0.95)
+
+assign(paste0("CIs_",this_cause), CIs)
+
+sink(paste0("R:/working/preparing data/Density/Figures/didsummary_90v10_", this_cause, ".txt")) 
+
+print(summary(didreg)) 
+
+sink()
+
+
+#75 vs 25
+birthall<-birthAll3
+
+birthall<-subset(birthall, percent_change>=quantile(birthall$percent_change, c(.75)) | percent_change<=quantile(birthall$percent_change, c(.25)))
+
+#Find density change data 
+birthall = birthall %>%
+  mutate(treated = percent_change>=x.75th)
+
+#Plot year and life expectancy of two density change categories to ensure parallel assumption is met
+pdf(paste0("R:/working/preparing data/Density/Figures/parallel_line_assumption_75v25_", this_cause, ".pdf")) 
+
+ggplot(birthall, aes(year, mx_mean, color = treated)) +
+  stat_summary(geom = 'line') +
+  geom_vline(xintercept = 1996) +
+  ggtitle("Parallel Line Assumption for Densification of P75 vs P25 - All CTs")+
+  xlab("Year") +
+  ylab("Life Expectancy") +
+  labs(color="Densification") +
+  scale_color_manual(labels= c("P25", "P75"), values=c("blue","red"))+
+  theme_minimal()
+
+dev.off()
+
+
+#DID
+
+birthall$time = ifelse(birthall$year>1996,1,0)
+birthall$treated = ifelse(birthall$percent_change>=x.75th,1,0)
+birthall$did = birthall$time * birthall$treated
+
+didreg = lm(mx_mean ~ treated + time + did, dat = birthall)
+
+sink(paste0("R:/working/preparing data/Density/Figures/didsummary_75v25_", this_cause, ".txt")) 
+
+print(summary(didreg)) 
+
+sink()
+
+```
+
+## Apply DID model on cause-specific mortalities - low SES group
+
+
+```{r}
+#this_cause<-"cvd"
+dir2<-"R:/working/preparing data/"
+file<-".Rdata"
+load(paste0(dir2, "density/birthAll_",this_cause, file))
+
+load("R:/working/preparing data/density/densityChangeCheck.RDATA")
+
+birthAll3<-birthAll3 %>% filter(msdgroup==1) #1 is low in this dataset
+
+birthAll3<-merge(birthAll3,densityChangeCheck,by="area")
+
+birthall<-birthAll3
+
+
+x.90th<-quantile(birthall$percent_change, c(.90))
+x.75th<-quantile(birthall$percent_change, c(.75))
+
+
+birthall<-subset(birthall, percent_change>=quantile(birthall$percent_change, c(.90)) | percent_change<=quantile(birthall$percent_change, c(.1)))
+
+#Find density change data 
+birthall = birthall %>%
+  mutate(treated = percent_change>=x.90th)
+
+#Plot year and life expectancy of two density change categories to ensure parallel assumption is met
+pdf(paste0("R:/working/preparing data/Density/Figures/parallel_line_assumption_90v10_", this_cause, "_lowSES.pdf")) 
+
+ggplot(birthall, aes(year, mx_mean, color = treated)) +
+  stat_summary(geom = 'line') +
+  geom_vline(xintercept = 1996) +
+  ggtitle("Parallel Line Assumption for Densification of P90 vs P10 - All CTs")+
+  xlab("Year") +
+  ylab("Life Expectancy") +
+  labs(color="Densification") +
+  scale_color_manual(labels= c("P10", "P90"), values=c("blue","red"))+
+  theme_minimal()
+
+dev.off()
+
+
+#DID
+
+birthall$time = ifelse(birthall$year>1996,1,0)
+birthall$treated = ifelse(birthall$percent_change>=x.90th,1,0)
+birthall$did = birthall$time * birthall$treated
+
+didreg = lm(mx_mean ~ treated + time + did, dat = birthall)
+CIs<-confint(didreg, "did", level=0.95)
+assign(paste0("CIs_",this_cause, "_low"), CIs)
+
+
+sink(paste0("R:/working/preparing data/Density/Figures/didsummary_90v10_", this_cause, "_lowSES.txt")) 
+
+print(summary(didreg)) 
+
+sink()
+
+#75 vs 25
+birthall<-birthAll3
+
+birthall<-subset(birthall, percent_change>=quantile(birthall$percent_change, c(.75)) | percent_change<=quantile(birthall$percent_change, c(.25)))
+
+#Find density change data 
+birthall = birthall %>%
+  mutate(treated = percent_change>=x.75th)
+
+#Plot year and life expectancy of two density change categories to ensure parallel assumption is met
+pdf(paste0("R:/working/preparing data/Density/Figures/parallel_line_assumption_75v25_", this_cause, "_lowSES.pdf")) 
+
+ggplot(birthall, aes(year, mx_mean, color = treated)) +
+  stat_summary(geom = 'line') +
+  geom_vline(xintercept = 1996) +
+  ggtitle("Parallel Line Assumption for Densification of P75 vs P25 - All CTs")+
+  xlab("Year") +
+  ylab("Life Expectancy") +
+  labs(color="Densification") +
+  scale_color_manual(labels= c("P25", "P75"), values=c("blue","red"))+
+  theme_minimal()
+
+dev.off()
+
+
+#DID
+
+birthall$time = ifelse(birthall$year>1996,1,0)
+birthall$treated = ifelse(birthall$percent_change>=x.75th,1,0)
+birthall$did = birthall$time * birthall$treated
+
+didreg = lm(mx_mean ~ treated + time + did, dat = birthall)
+
+sink(paste0("R:/working/preparing data/Density/Figures/didsummary_75v25_", this_cause, "_lowSES.txt")) 
+
+print(summary(didreg)) 
+
+sink()
+
+```
+
+
+## Apply DID model on cause-specific mortalities - high SES group
+
+
+```{r}
+#this_cause<-"mater_neonat"
+dir2<-"R:/working/preparing data/"
+file<-".Rdata"
+load(paste0(dir2, "density/birthAll_",this_cause, file))
+
+load("R:/working/preparing data/density/densityChangeCheck.RDATA")
+
+birthAll3<-birthAll3 %>% filter(msdgroup==5)
+
+birthAll3<-merge(birthAll3,densityChangeCheck,by="area")
+
+birthall<-birthAll3
+
+
+x.90th<-quantile(birthall$percent_change, c(.90))
+x.75th<-quantile(birthall$percent_change, c(.75))
+
+
+birthall<-subset(birthall, change>=quantile(birthall$percent_change, c(.90)) | change<=quantile(birthall$percent_change, c(.1)))
+
+#Find density change data 
+birthall = birthall %>%
+  mutate(treated = percent_change>=x.90th)
+
+#Plot year and life expectancy of two density change categories to ensure parallel assumption is met
+pdf(paste0("R:/working/preparing data/Density/Figures/parallel_line_assumption_90v10_", this_cause, "_highSES.pdf")) 
+
+ggplot(birthall, aes(year, mx_mean, color = treated)) +
+  stat_summary(geom = 'line') +
+  geom_vline(xintercept = 1996) +
+  ggtitle("Parallel Line Assumption for Densification of P90 vs P10 - All CTs")+
+  xlab("Year") +
+  ylab("Life Expectancy") +
+  labs(color="Densification") +
+  scale_color_manual(labels= c("P10", "P90"), values=c("blue","red"))+
+  theme_minimal()
+
+dev.off()
+
+
+#DID
+
+birthall$time = ifelse(birthall$year>1996,1,0)
+birthall$treated = ifelse(birthall$percent_change>=x.90th,1,0)
+birthall$did = birthall$time * birthall$treated
+
+didreg = lm(mx_mean ~ treated + time + did, dat = birthall)
+CIs<-confint(didreg, "did", level=0.95)
+assign(paste0("CIs_",this_cause,"_high"), CIs)
+
+
+sink(paste0("R:/working/preparing data/Density/Figures/didsummary_90v10_", this_cause, "_highSES.txt")) 
+
+print(summary(didreg)) 
+
+sink()
+
+#75 vs 25
+
+birthall<-birthAll3
+
+birthall<-subset(birthall, change>=quantile(birthall$percent_change, c(.75)) | change<=quantile(birthall$percent_change, c(.25)))
+
+#Find density change data 
+birthall = birthall %>%
+  mutate(treated = percent_change>=x.75th)
+
+#Plot year and life expectancy of two density change categories to ensure parallel assumption is met
+pdf(paste0("R:/working/preparing data/Density/Figures/parallel_line_assumption_75v25_", this_cause, "_highSES.pdf")) 
+
+ggplot(birthall, aes(year, mx_mean, color = treated)) +
+  stat_summary(geom = 'line') +
+  geom_vline(xintercept = 1996) +
+  ggtitle("Parallel Line Assumption for Densification of P75 vs P25 - All CTs")+
+  xlab("Year") +
+  ylab("Life Expectancy") +
+  labs(color="Densification") +
+  scale_color_manual(labels= c("P25", "P75"), values=c("blue","red"))+
+  theme_minimal()
+
+dev.off()
+
+
+#DID
+
+birthall$time = ifelse(birthall$year>1996,1,0)
+birthall$treated = ifelse(birthall$percent_change>=x.75th,1,0)
+birthall$did = birthall$time * birthall$treated
+
+didreg = lm(mx_mean ~ treated + time + did, dat = birthall)
+
+sink(paste0("R:/working/preparing data/Density/Figures/didsummary_75v25_", this_cause, "_highSES.txt")) 
+
+print(summary(didreg)) 
+
+sink()
+
+```
+
+
+## Descriptive data for paper
+
+```{r}
+CTs<-unique(birthall$area)
+
+allCTs<-birthall %>% filter(year<1996) %>% summarise(ex_mean=median(ex_mean), population_density=median(population_density), msd=median(msd), education=median(education), aboriginal=median(Aboriginal))
+
+treatedCTs<-birthall %>% filter(treated==1) %>% group_by(area) %>% summarise(CSDNAME=max(CSDNAME))
+controlCTs<-birthall %>% filter(treated==0) %>% group_by(area) %>% summarise(CSDNAME=max(CSDNAME))
+
+
+
+treated<-birthall %>% filter(treated==1 & year<1996) %>% summarise(ex_mean=median(ex_mean), population_density=median(population_density), msd=median(msd), education=median(education), aboriginal=median(Aboriginal), MatScore=median(MatScore), SocScore=median(SocScore))
+
+control<-birthall %>% filter(treated==0 & year<1996) %>%  summarise(ex_mean=median(ex_mean),population_density=median(population_density), msd=median(msd), education=median(education), aboriginal=median(Aboriginal), MatScore=median(MatScore), SocScore=median(SocScore))
+
+```
+
+## Derive land area
+
+```{r}
+data<-birthall
+load("R:/working/preparing data/CT368.rdata")
+
+CTs<-data.frame(area=unique(data$area))
+CTs<-left_join(CTs, CT, by="area")
+
+landarea<-left_join(CTs, densitycwed, by="CT") %>%  summarise(land_area=median(land_area))
+
+```
+
