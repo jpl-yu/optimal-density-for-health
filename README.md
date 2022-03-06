@@ -29,7 +29,7 @@ Greater inequality with increasing density was observed for causes such as HIV/A
 
 ## Published Manuscript
 
-The findings of this study was published in the journal, <a href='https://doi.org/10.1016/j.healthplace.2021.102692'>International Journal of Environmental Research and Public Health</a>. The following citation can be used:
+The findings of this study was published in the journal, <a href='https://doi.org/10.3390/ijerph19052900'>International Journal of Environmental Research and Public Health</a>. The following citation can be used:
 
 Yu J, Gustafson P, Tran M, Brauer M. Assessing trade-offs and optimal ranges of density for life expectancy and 12 causes of mortality in Metro Vancouver, Canada, 1990-2016. International Journal of Environmental Research and Public Health. 2022 Mar.
 
